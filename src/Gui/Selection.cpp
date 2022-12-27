@@ -1120,56 +1120,8 @@ QString SelectionSingleton::format(const char *docname,
                                    float x, float y, float z,
                                    bool show)
 {
-    App::SubObjectT objT(docname?docname:DocName.c_str(),
-                         objname?objname:FeatName.c_str(),
-                         subname?subname:SubName.c_str());
-
-    QString text;
-    QTextStream ts(&text);
-
-    auto sobj = objT.getSubObject();
-    if (sobj) {
-        int index = -1;
-        std::string element = objT.getOldElementName(&index);
-        ts << QString::fromUtf8(sobj->getNameInDocument());
-        if (index > 0)
-            ts << "." << QString::fromUtf8(element.c_str()) << index;
-        ts << " | ";
-        if (sobj->Label.getStrValue() != sobj->getNameInDocument())
-            ts << QString::fromUtf8(sobj->Label.getValue()) << " | ";
-    }
-    if(x != 0. || y != 0. || z != 0.) {
-        auto fmt = [this](double v) -> QString {
-            Base::Quantity q(v, Base::Quantity::MilliMetre.getUnit());
-            double factor;
-            QString unit;
-            Base::UnitsApi::schemaTranslate(q, factor, unit);
-            QLocale Lc;
-            const Base::QuantityFormat& format = q.getFormat();
-            if (format.option != Base::QuantityFormat::None) {
-                uint opt = static_cast<uint>(format.option);
-                Lc.setNumberOptions(static_cast<QLocale::NumberOptions>(opt));
-            }
-            return QStringLiteral("%1 %2").arg(
-                        Lc.toString(v/factor, format.toFormat(),
-                                    fmtDecimal<0 ? format.precision : fmtDecimal),
-                        unit);
-        };
-        if (QApplication::queryKeyboardModifiers() == Qt::AltModifier) {
-            ts << qSetRealNumberPrecision(std::numeric_limits<double>::digits10 + 1);
-            ts << x << "; " << y << "; " << z;
-        } else
-            ts << fmt(x) << "; " << fmt(y) << "; " << fmt(z);
-        ts << QStringLiteral(" | ");
-    }
-
-    ts << QString::fromUtf8(objT.getDocumentName().c_str()) << "#" 
-       << QString::fromUtf8(objT.getObjectName().c_str()) << "."
-       << QString::fromUtf8(objT.getSubName().c_str());
-
     PreselectionText.clear();
-    if (show && getMainWindow()) {
-        getMainWindow()->showMessage(text);
+    if (show) {
 
         std::vector<std::string> cmds;
         const auto &cmdmap = Gui::Application::Instance->commandManager().getCommands();
@@ -1200,7 +1152,7 @@ QString SelectionSingleton::format(const char *docname,
         }
     }
 
-    return text;
+    return QString();
 }
 
 const std::string &SelectionSingleton::getPreselectionText() const

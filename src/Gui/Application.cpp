@@ -144,6 +144,7 @@
 #include "View3DViewerPy.h"
 #include <Gui/GuiInitScript.h>
 #include <App/DocumentParams.h>
+#include "SelectionSummary.h"
 
 using namespace Gui;
 using namespace Gui::DockWnd;
@@ -383,6 +384,7 @@ struct PyMethodDef FreeCADGui_methods[] = {
 
 } // namespace Gui
 
+SelectionSummary* summary;
 Application::Application(bool GUIenabled)
 {
     //App::GetApplication().Attach(this);
@@ -586,7 +588,11 @@ Application::Application(bool GUIenabled)
         createStandardOperations();
         MacroCommand::load();
     }
+
+    // TODO find idiomatically correct way to trigger class instantation
+    summary = new SelectionSummary();
 }
+
 
 Application::~Application()
 {

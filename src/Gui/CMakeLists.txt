@@ -45,6 +45,7 @@ include_directories(
     ${XercesC_INCLUDE_DIRS}
     ${ZLIB_INCLUDE_DIR}
     ${3DCONNEXION_INCLUDE_DIR}
+    ${OCC_INCLUDE_DIR}
 )
 
 if(MSVC)
@@ -1283,6 +1284,8 @@ SET(Selection_SRCS
     SelectionObject.cpp
     Selection.h
     Selection.cpp
+    SelectionSummary.h
+    SelectionSummary.cpp
     SelectionFilter.h
     SelectionFilter.cpp
     SelectionFilter.y
@@ -1446,7 +1449,7 @@ if (EIGEN3_NO_DEPRECATED_COPY)
 endif ()
 
 add_library(FreeCADGui SHARED ${FreeCADGui_SRCS})
-target_link_libraries(FreeCADGui ${FreeCADGui_LIBS})
+target_link_libraries(FreeCADGui ${FreeCADGui_LIBS} Part)
 
 SET_BIN_DIR(FreeCADGui FreeCADGui)
 
