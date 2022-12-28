@@ -144,24 +144,24 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
             return;
         }
 
-        // Obtain list of selected objects
-        auto selections = Selection().getCompleteSelection();
+        // For each selected object, obtain shape instance
+        std::vector<TopoDS_Shape> selections;
+        for(auto& selection: Selection().getCompleteSelection()){
+            TopoDS_Shape shape = Part::Feature::getShape(selection.pObject, selection.SubName, true);
+            if(shape.IsNull()){
+                continue;
+            }
+            selections.push_back(shape);
+        }
 
         if(selections.size() == 0){
             return;
         }
 
-        // For each selected object, obtain shape instance
-        std::vector<TopoDS_Shape> shapeSelections;
-        for(auto& selection: selections){
-            TopoDS_Shape shape = Part::Feature::getShape(selection.pObject, selection.SubName, true);
-            shapeSelections.push_back(shape);
-        }
-
         // Generate different summary text based on amount of selections
         if(selections.size() == 1){
             // Display characteristics of selected element
-            auto shape = shapeSelections.at(0);
+            auto shape = selections.at(0);
             switch(shape.ShapeType()){
                 case TopAbs_FACE: {
                     // Display face area
@@ -207,8 +207,8 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
             }
         // Handle the scenario with 2 selections
         }else if(selections.size() == 2){
-            auto shapeA = shapeSelections.at(0);
-            auto shapeB = shapeSelections.at(1);
+            auto shapeA = selections.at(0);
+            auto shapeB = selections.at(1);
 
             // Handle selection of two faces
             if(shapeA.ShapeType() == TopAbs_FACE && shapeA.ShapeType() == TopAbs_FACE){
@@ -281,9 +281,9 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
             }
         }else{
             // Check if all elements are of the same type
-            auto type = shapeSelections.at(0).ShapeType();
+            auto type = selections.at(0).ShapeType();
             bool allTypesIdentical = true;
-            for(auto& selection: shapeSelections){
+            for(auto& selection: selections){
                 if(selection.ShapeType() != type){
                     allTypesIdentical = false;
                     break;
@@ -295,7 +295,7 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
                         case TopAbs_FACE: {
                             // All faces; display total area and selection count
                             float area = 0;
-                            for(auto& shape: shapeSelections){
+                            for(auto& shape: selections){
                                 const TopoDS_Face &face = TopoDS::Face(shape);
                                 area += getFaceArea(face);
                             }
@@ -305,7 +305,7 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
                         case TopAbs_EDGE: {
                             // All edges, display total edge count and selection count
                             float length = 0;
-                            for(auto& shape: shapeSelections){
+                            for(auto& shape: selections){
                                 length += getLength(shape);
                             }
                             ts << selections.size() << " edges. Total length: " << length;
@@ -321,7 +321,7 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
                         case TopAbs_COMPSOLID: {
                             // Solids; display total volume
                             float volume = 0;
-                            for(auto& shape: shapeSelections){
+                            for(auto& shape: selections){
                                 volume += getVolume(shape);
                             }
                             ts << selections.size() << " solids. Total volume: " << volume;
