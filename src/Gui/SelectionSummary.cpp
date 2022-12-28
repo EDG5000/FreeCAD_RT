@@ -23,22 +23,30 @@
 /*
 Selection summary
 
-Displays realtime measurements of the currently selected elements in bottom bar
+Displays measurements upon selecting elements, depending on how many and what type of elements selected.
 
-When 1 sub-element is selected:
+1 elements:
     Face: Display area
-    Vertex, Wire: Display length
-    Solid, Compound, Compound Solid: Display volume
+    Edge, Wire: length
+    Solid, Compound, Compound Solid: volume
+    Vertex: Position (TODO)
 
-When 2 sub-elements is selected:
-    2 Faces:
-        2 parallel faces: Display normal distance
-        2 faces: display total area
-    2 Edges
-        2 parallel edges: Display x, y distance with Z being the edge vector (this can be rephrased more correctly)
-        2 edges: display total length
+2 elements:
+    Faces: total area
+        Parallel: distance
+        Non-parallel: angle (TODO)
+    Edges: total length
+        Parallel: distance
+        Non-parallel: angle (TODO)
+    Vertices: delta XYZ, distance
+    Solids: total volume (TODO)
 
-        TODO
+3+ elements:
+    Faces: total area
+    Edges: total length
+    Wires: total length (TODO)
+    Vertices: amount
+    Solids: total volume
  */
 
 #include "PreCompiled.h"
@@ -46,36 +54,28 @@ When 2 sub-elements is selected:
 # include <QString>
 # include <QTextStream>
 
-/*
-# include <assert.h>
-# include <string>
-# include <boost_bind_bind.hpp>
-# include <QApplication>
-# include <QStatusBar>
-*/
 #endif
+
+#include "SelectionSummary.h"
 
 #include <exception>
 #include <sstream>
+#include <vector>
 
 #include <Base/Console.h>
-//#include <App/Application.h>
-//#include <App/GeoFeature.h>
-//#include <Gui/Application.h>
 #include <Gui/Document.h>
 #include <Gui/Selection.h>
 #include <Gui/MainWindow.h>
 #include <Mod/Part/App/PreCompiled.h>
 #include <Mod/Part/App/PartFeature.h>
-#include "SelectionSummary.h"
 
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepAdaptor_Surface.hxx>
+#include <BRepTools.hxx>
+#include <BRep_Tool.hxx>
+#include <BRepGProp.hxx>
 #include <TopoDS.hxx>
 #include <GeomLProp_SLProps.hxx>
-#include <BRepTools.hxx>
-
-#include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
 #include <Geom_CylindricalSurface.hxx>
@@ -90,8 +90,10 @@ using namespace std;
 
 namespace Gui{
 
+// Maximum error passed to OCC when performing isCoaxial and isParallel checks
 constexpr double ANGULAR_TOLERANCE = 0;
-constexpr double LINEAR_TOLERANCE = 0; // Maximum error passed to OCC when performing isNormal and isParallel checks
+constexpr double LINEAR_TOLERANCE = 0;
+constexpr double LINEAR_TOLERANCE_B = 0.01; // TODO merge with LINEAR_TOLERANCE; investigate desired tolerance levels
 
 static gp_Ax1 edgeToAxis(TopoDS_Edge edge){
     auto vertex1 = TopExp::FirstVertex(edge);
@@ -109,20 +111,20 @@ static gp_Dir getNormal(TopoDS_Face face){
     Standard_Real umin, umax, vmin, vmax;
     BRepTools::UVBounds(face, umin, umax, vmin, vmax);
     Handle(Geom_Surface) handle = BRep_Tool::Surface(face);
-    GeomLProp_SLProps props(handle, umin, vmin, 1, 0.01);
+    GeomLProp_SLProps props(handle, umin, vmin, 1, LINEAR_TOLERANCE_B);
     return props.Normal();
 }
 
 static float getFaceArea(TopoDS_Shape face){
     GProp_GProps gprops;
-    BRepGProp::SurfaceProperties(face, gprops); // Stores results in gprops
+    BRepGProp::SurfaceProperties(face, gprops);
     return gprops.Mass();
 }
 
 // Should work with edges and wires
 static float getLength(TopoDS_Shape wire){
     GProp_GProps gprops;
-    BRepGProp::LinearProperties(wire, gprops); // Stores results in gprops
+    BRepGProp::LinearProperties(wire, gprops);
     return gprops.Mass();
 }
 
@@ -143,7 +145,6 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
         }
 
         // Obtain list of selected objects
-        //std::vector<App::DocumentObject*> selections = Selection().getObjectsOfType(App::GeoFeature::getClassTypeId());
         auto selections = Selection().getCompleteSelection();
 
         if(selections.size() == 0){
@@ -160,10 +161,6 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
         // Generate different summary text based on amount of selections
         if(selections.size() == 1){
             // Display characteristics of selected element
-            // Area of face
-            // Circumference of face
-            // Length of line
-            // Radius and diameter of circle or circular face; length of circular face
             auto shape = shapeSelections.at(0);
             switch(shape.ShapeType()){
                 case TopAbs_FACE: {
@@ -208,21 +205,22 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
 
                 break;
             }
+        // Handle the scenario with 2 selections
         }else if(selections.size() == 2){
-
             auto shapeA = shapeSelections.at(0);
             auto shapeB = shapeSelections.at(1);
+
             // Handle selection of two faces
             if(shapeA.ShapeType() == TopAbs_FACE && shapeA.ShapeType() == TopAbs_FACE){
-                // Determine if both selections are cylindrical; if so, get axial distance
+                // Obtain shapes and display surface area
                 auto faceA = TopoDS::Face(shapeA);
                 auto faceB = TopoDS::Face(shapeB);
-                BRepAdaptor_Surface surfAdaptorA(faceA, Standard_False);
-                BRepAdaptor_Surface surfAdaptorB(faceB, Standard_False);
-
                 double totalSurfaceArea = getFaceArea(shapeA) + getFaceArea(shapeB);
                 ts << " Total surface area of faces: " << totalSurfaceArea;
 
+                // Determine if both selections are cylindrical; if so, get axial distance
+                BRepAdaptor_Surface surfAdaptorA(faceA, Standard_False);
+                BRepAdaptor_Surface surfAdaptorB(faceB, Standard_False);
                 if(surfAdaptorA.GetType() == GeomAbs_Cylinder && surfAdaptorB.GetType() == GeomAbs_Cylinder){
                     // Obtain the axles of the two selected cylindrical faces
                     Handle(Geom_Surface) surfaceA = BRep_Tool::Surface(faceA);
@@ -237,32 +235,39 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
                         // Two parallel cylindrical surfaces where selected, obtain the axial distance and display surface area
                         auto axialDistance = gp_Lin(axisA).Distance(gp_Lin(axisB));
                         ts << " Axial distance of cilindrical faces: " << axialDistance;
+                    }else{
+                        // Two non-parallel cylindrical faces selected, display angle
                     }
+                // Handle selection of two planar faces
                 }else if(surfAdaptorA.GetType() == GeomAbs_Plane && surfAdaptorB.GetType() == GeomAbs_Plane){
-                    // Handle selection of two planar faces
-                    // I faces are parallel to each other, display distance
+                    // Faces are parallel to each other, display distance
                     if(getNormal(faceA).IsEqual(getNormal(faceB), ANGULAR_TOLERANCE) || getNormal(faceA).IsOpposite(getNormal(faceB), ANGULAR_TOLERANCE)){
                         // Faces are parallel, display distance and total surface area
                         BRepExtrema_DistShapeShape measure(shapeA, shapeB);
                         auto val = measure.Value();
                         ts << " Parallel face distance: " << val;
+                    }else{
+                        // TODO Two planar faces not parallel to each other: display angle
                     }
                 }
 
+            // Handle selection of two edges
             }else if(shapeA.ShapeType() == TopAbs_EDGE && shapeA.ShapeType() == TopAbs_EDGE){
                 auto edgeA = TopoDS::Edge(shapeA);
                 auto edgeB = TopoDS::Edge(shapeB);
                 auto axisA = edgeToAxis(edgeA);
                 auto axisB = edgeToAxis(edgeB);
 
-                 ts << "Total length of edges: " << (getLength(shapeA) + getLength(shapeB));
+                ts << "Total length of edges: " << (getLength(shapeA) + getLength(shapeB));
+
+                // Check if edges are parallel, if so, display axial distance
                 if(axisA.IsParallel(axisB, ANGULAR_TOLERANCE) && !axisA.IsCoaxial(axisB, ANGULAR_TOLERANCE, LINEAR_TOLERANCE)){
-                    // Two parallel cylindrical surfaces where selected, obtain the axial distance and display surface area
                     auto axialDistance = gp_Lin(axisA).Distance(gp_Lin(axisB));
                     ts << " Axial distance: " << axialDistance;
                 }
+            // Handle selection of two vertices
             }else if(shapeA.ShapeType() == TopAbs_VERTEX && shapeA.ShapeType() == TopAbs_VERTEX){
-                // Handle selection of two vertices
+
                 TopoDS_Vertex vertexA = TopoDS::Vertex(shapeA);
                 TopoDS_Vertex vertexB = TopoDS::Vertex(shapeB);
 
@@ -271,8 +276,8 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
 
                 ts << "Distance between vertices: " << pointA.Distance(pointB) << " Delta X: " << pointA.X()-pointB.X() << " Delta Y: " << pointA.Y()-pointB.Y() << " Delta Z: " << pointA.Z()-pointB.Z();
             }else{
-                // Handle heterogenous selection
-                ts << "2 elements selected";
+                // Handle heterogenous selection, not much to measure
+                ts << "2 selections";
             }
         }else{
             // Check if all elements are of the same type
@@ -284,6 +289,7 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
                     break;
                 }
             }
+            // Handle selection of 3+ homogenous selections
             if(allTypesIdentical){
                     switch(type){
                         case TopAbs_FACE: {
@@ -329,15 +335,14 @@ void SelectionSummary::onSelectionChanged(const Gui::SelectionChanges& reason){
                 // Different elements selected, display count
                 ts << selections.size() << " selections";
             }
-
         }
-        //FC_ERR((string) text.toUtf8());
-        getMainWindow()->showMessage(text, 99999); // TODO this is hacky. Ideally the message would stay forever until something happens.
+        getMainWindow()->showMessage(text, 99999); // TODO this is hacky. Ideally the message would stay forever another message shows up. Passing 0 or omitting parameter does not seem to leave the message on the screen indefinately.
     }catch(Base::Exception& e){
         e.ReportException();
     }catch(exception& e){
         FC_ERR(e.what());
     }catch(Standard_Failure& e){
+        // Print OCC error
         stringstream ss;
         ss << e << endl;
         string err = ss.str();
